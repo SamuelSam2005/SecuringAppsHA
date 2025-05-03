@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SecureDocumentExchange.Web.Models;
-
+using SecureDocumentExchange.Web.Filters;
 namespace SecureDocumentExchange.Web.Controllers
 {
     [Authorize]
@@ -50,6 +50,20 @@ namespace SecureDocumentExchange.Web.Controllers
                 $"AccessCode: {accessCode}\nLawyerEmail: {model.LawyerEmail}\nUploader: {User.Identity.Name}");
 
             return RedirectToAction("Upload");
+        }
+
+        [HttpGet]
+        [VerifyAccessFilter]
+        public IActionResult Download(string file)
+        {
+            var secureFolder = Path.Combine(_env.ContentRootPath, "SecureFiles");
+            var filePath = Path.Combine(secureFolder, file);
+
+            if (!System.IO.File.Exists(filePath))
+                return NotFound();
+
+            var mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            return PhysicalFile(filePath, mime, file);
         }
     }
 }
