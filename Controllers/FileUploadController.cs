@@ -1,8 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SecureDocumentExchange.Web.Models;
-using SecureDocumentExchange.Web.Filters;
 using SecureDocumentExchange.Web.Helpers;
+using SecureDocumentExchange.Web.Filters;
+
 namespace SecureDocumentExchange.Web.Controllers
 {
     [Authorize]
@@ -23,24 +24,29 @@ namespace SecureDocumentExchange.Web.Controllers
         {
             if (!ModelState.IsValid || model.File == null || model.File.Length == 0)
             {
-                ModelState.AddModelError("", "Invalid file");
+                ModelState.AddModelError("", "Invalid file.");
                 return View(model);
             }
 
+            // Header-based validation: allow only true .docx
             if (!FileValidator.IsValidDocx(model.File))
             {
                 ModelState.AddModelError("", "Only real .docx files are allowed.");
                 return View(model);
             }
 
+            // Sanitize input to avoid XSS injection
+            var lawyerEmail = Sanitizer.Clean(model.LawyerEmail);
+
             // Generate secure access code
             string accessCode = Guid.NewGuid().ToString();
 
-            // Secure storage path (outside wwwroot)
+            // Define secure (non-wwwroot) storage path
             string secureFolder = Path.Combine(_env.ContentRootPath, "SecureFiles");
             if (!Directory.Exists(secureFolder))
                 Directory.CreateDirectory(secureFolder);
 
+            // Save file
             string fileName = Path.GetFileName(model.File.FileName);
             string savePath = Path.Combine(secureFolder, fileName);
 
@@ -49,12 +55,13 @@ namespace SecureDocumentExchange.Web.Controllers
                 await model.File.CopyToAsync(stream);
             }
 
-            TempData["Message"] = $"File uploaded successfully. Access Code: {accessCode}";
-            TempData["LawyerEmail"] = model.LawyerEmail;
+            // Save metadata (access control)
+            string metaPath = Path.Combine(secureFolder, $"{fileName}.meta.txt");
+            System.IO.File.WriteAllText(metaPath,
+                $"AccessCode: {accessCode}\nLawyerEmail: {lawyerEmail}\nUploader: {User.Identity.Name}");
 
-            // Log metadata for now (will handle logging separately later)
-            System.IO.File.WriteAllText(Path.Combine(secureFolder, $"{fileName}.meta.txt"),
-                $"AccessCode: {accessCode}\nLawyerEmail: {model.LawyerEmail}\nUploader: {User.Identity.Name}");
+            TempData["Message"] = $"File uploaded successfully. Access Code: {accessCode}";
+            TempData["LawyerEmail"] = lawyerEmail;
 
             return RedirectToAction("Upload");
         }
