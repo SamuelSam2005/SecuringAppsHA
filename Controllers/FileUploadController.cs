@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SecureDocumentExchange.Web.Models;
 using SecureDocumentExchange.Web.Filters;
+using SecureDocumentExchange.Web.Helpers;
 namespace SecureDocumentExchange.Web.Controllers
 {
     [Authorize]
@@ -23,6 +24,12 @@ namespace SecureDocumentExchange.Web.Controllers
             if (!ModelState.IsValid || model.File == null || model.File.Length == 0)
             {
                 ModelState.AddModelError("", "Invalid file");
+                return View(model);
+            }
+
+            if (!FileValidator.IsValidDocx(model.File))
+            {
+                ModelState.AddModelError("", "Only real .docx files are allowed.");
                 return View(model);
             }
 
