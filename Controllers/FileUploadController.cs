@@ -69,6 +69,8 @@ namespace SecureDocumentExchange.Web.Controllers
 
         [HttpPost]
         [VerifyAccessFilter]
+        [HttpPost]
+        [VerifyAccessFilter]
         public IActionResult Download(string file, string email, string code, string publicKey)
         {
             var secureFolder = Path.Combine(_env.ContentRootPath, "SecureFiles");
@@ -77,15 +79,20 @@ namespace SecureDocumentExchange.Web.Controllers
             if (!System.IO.File.Exists(filePath))
                 return NotFound("File not found.");
 
+            // Read the original file
             var fileBytes = System.IO.File.ReadAllBytes(filePath);
 
-            // Encrypt file using AES
+            // 🔐 1. Encrypt the file using AES
             var (encryptedFile, aesKey, iv) = HybridEncryptionService.EncryptFile(fileBytes);
 
-            // Encrypt AES key with lawyer's public RSA key
+            // 🔐 2. Encrypt the AES key using the lawyer's public key
             var encryptedAesKey = HybridEncryptionService.EncryptAesKeyWithRsa(aesKey, publicKey);
 
-            // Build response archive (in memory ZIP)
+            // 🖊️ 3. Sign the encrypted file using the server's private key
+            string privateKeyPath = Path.Combine(_env.ContentRootPath, "signing_private.pem");
+            var signature = FileSignerService.GenerateSignature(encryptedFile, privateKeyPath);
+
+            // 📦 4. Build a ZIP containing: EncryptedFile, AES Key, IV, Signature
             using var memoryStream = new MemoryStream();
             using (var archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true))
             {
@@ -93,17 +100,23 @@ namespace SecureDocumentExchange.Web.Controllers
                 using (var entryStream = encFile.Open())
                     entryStream.Write(encryptedFile, 0, encryptedFile.Length);
 
-                var encKey = archive.CreateEntry("EncryptedAESKey.txt");
-                using (var entryStream = encKey.Open())
+                var keyFile = archive.CreateEntry("EncryptedAESKey.txt");
+                using (var entryStream = keyFile.Open())
                     entryStream.Write(encryptedAesKey, 0, encryptedAesKey.Length);
 
                 var ivFile = archive.CreateEntry("IV.txt");
                 using (var entryStream = ivFile.Open())
                     entryStream.Write(iv, 0, iv.Length);
+
+                var signatureFile = archive.CreateEntry("Signature.txt");
+                using (var entryStream = signatureFile.Open())
+                    entryStream.Write(signature, 0, signature.Length);
             }
 
+            // 🎯 5. Return the ZIP file
             return File(memoryStream.ToArray(), "application/zip", "EncryptedPackage.zip");
         }
+
 
     }
 }
