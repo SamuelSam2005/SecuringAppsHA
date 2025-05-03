@@ -1,0 +1,23 @@
+﻿@model SecureDocumentExchange.Web.Models.FileUploadViewModel
+
+<h2>Upload Secure Document</h2>
+
+@if (TempData["Message"] != null)
+{
+    <div style="color:green;"><strong>@TempData["Message"]</strong></div>
+    <div><strong>Lawyer Email:</strong> @TempData["LawyerEmail"]</div>
+}
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data">
+    <div>
+        <label>Lawyer Email</label>
+        <input asp-for="LawyerEmail" />
+        <span asp-validation-for="LawyerEmail"></span>
+    </div>
+    <div>
+        <label>Choose File (.docx)</label>
+        <input asp-for="File" type="file" />
+        <span asp-validation-for="File"></span>
+    </div>
+    <button type="submit">Upload</button>
+</form>
