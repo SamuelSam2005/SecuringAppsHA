@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using SecureDocumentExchange.Web.Models;
 using SecureDocumentExchange.Web.Helpers;
 using SecureDocumentExchange.Web.Filters;
+using SecureDocumentExchange.Web.Services;
 
 namespace SecureDocumentExchange.Web.Controllers
 {
@@ -66,18 +67,43 @@ namespace SecureDocumentExchange.Web.Controllers
             return RedirectToAction("Upload");
         }
 
-        [HttpGet]
+        [HttpPost]
         [VerifyAccessFilter]
-        public IActionResult Download(string file)
+        public IActionResult Download(string file, string email, string code, string publicKey)
         {
             var secureFolder = Path.Combine(_env.ContentRootPath, "SecureFiles");
             var filePath = Path.Combine(secureFolder, file);
 
             if (!System.IO.File.Exists(filePath))
-                return NotFound();
+                return NotFound("File not found.");
 
-            var mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            return PhysicalFile(filePath, mime, file);
+            var fileBytes = System.IO.File.ReadAllBytes(filePath);
+
+            // Encrypt file using AES
+            var (encryptedFile, aesKey, iv) = HybridEncryptionService.EncryptFile(fileBytes);
+
+            // Encrypt AES key with lawyer's public RSA key
+            var encryptedAesKey = HybridEncryptionService.EncryptAesKeyWithRsa(aesKey, publicKey);
+
+            // Build response archive (in memory ZIP)
+            using var memoryStream = new MemoryStream();
+            using (var archive = new System.IO.Compression.ZipArchive(memoryStream, System.IO.Compression.ZipArchiveMode.Create, true))
+            {
+                var encFile = archive.CreateEntry("EncryptedFile.docx");
+                using (var entryStream = encFile.Open())
+                    entryStream.Write(encryptedFile, 0, encryptedFile.Length);
+
+                var encKey = archive.CreateEntry("EncryptedAESKey.txt");
+                using (var entryStream = encKey.Open())
+                    entryStream.Write(encryptedAesKey, 0, encryptedAesKey.Length);
+
+                var ivFile = archive.CreateEntry("IV.txt");
+                using (var entryStream = ivFile.Open())
+                    entryStream.Write(iv, 0, iv.Length);
+            }
+
+            return File(memoryStream.ToArray(), "application/zip", "EncryptedPackage.zip");
         }
+
     }
 }
